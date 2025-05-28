@@ -5,7 +5,6 @@ from fpdf import FPDF
 import os
 from datetime import datetime
 
-# === PDF Class ===
 class PDF(FPDF):
     def __init__(self):
         super().__init__()
