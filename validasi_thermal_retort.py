@@ -1,13 +1,6 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from fpdf import FPDF
-from fpdf import FPDF
-pdf = FPDF()
 from fpdf import FPDF
 from io import BytesIO
-import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -37,7 +30,6 @@ st.download_button(
     file_name="validasi_thermal_retort.pdf",
     mime="application/pdf"
 )
-
 
 from io import BytesIO
 from datetime import datetime
