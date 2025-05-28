@@ -1,14 +1,9 @@
-# Tool Menghitung F₀ - Validasi Thermal Retort
+# Aplikasi Validasi Thermal Retort
 
-Aplikasi berbasis Streamlit untuk menghitung nilai F₀ pada proses sterilisasi retort. Dilengkapi dengan input manual, upload data Excel, grafik suhu, serta ekspor hasil ke dalam PDF.
+Aplikasi berbasis Streamlit untuk menghitung nilai F₀ dari data suhu proses sterilisasi makanan retort. Dikembangkan oleh PT Rumah Retort Bersama.
 
-## 🔧 Fitur Utama
-
-- Input data suhu dan waktu secara manual
-- Upload file Excel berisi data suhu per menit
-- Visualisasi grafik suhu terhadap waktu
-- Validasi suhu ≥ 121.1°C selama minimal 3 menit
-- Ekspor laporan validasi ke PDF
-
-## 📁 Struktur Folder
-
+Fitur:
+- Hitung nilai F₀ dari input suhu manual atau file Excel UMKM.
+- Validasi suhu minimum ≥121.1°C selama ≥3 menit.
+- Grafik suhu dan F₀.
+- Ekspor laporan ke PDF.
