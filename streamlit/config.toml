@@ -1,0 +1,15 @@
+[server]
+headless = true
+
+[theme]
+primaryColor = "#4B9CD3"
+backgroundColor = "#F9F9F9"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#000000"
+
+[client]
+toolbarMode = "minimal"
+showSidebarNavigation = false
+
+[ui]
+pageTitle = "Tools menghitung F0"
