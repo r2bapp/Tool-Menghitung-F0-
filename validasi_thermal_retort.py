@@ -12,8 +12,11 @@ st.set_page_config(page_title="Tools mengetahui F0", layout="centered")
 class PDF(FPDF):
     def __init__(self):
         super().__init__()
+        # Tambahkan font terlebih dahulu
+        self.add_font('DejaVu', '', 'fonts/DejaVuSans.ttf', uni=True)
+        self.add_font('DejaVu', 'B', 'fonts/DejaVuSans-Bold.ttf', uni=True)
+        self.set_auto_page_break(auto=True, margin=15)
         self.add_page()
-        self.set_font("DejaVu", '', 14)
 
     def header(self):
         self.set_font("DejaVu", 'B', 16)
