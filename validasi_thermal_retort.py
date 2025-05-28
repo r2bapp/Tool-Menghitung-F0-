@@ -1,135 +1,99 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 from fpdf import FPDF
 import os
 from datetime import datetime
 
-st.set_page_config(page_title="Tools mengetahui F0", layout="centered")
-
-# PDF Report Class
+# === PDF Class ===
 class PDF(FPDF):
     def __init__(self):
         super().__init__()
-        # Tambahkan font terlebih dahulu
-        self.add_font('DejaVu', '', 'fonts/DejaVuSans.ttf', uni=True)
-        self.add_font('DejaVu', 'B', 'fonts/DejaVuSans-Bold.ttf', uni=True)
-        self.set_auto_page_break(auto=True, margin=15)
+        self.add_font("DejaVu", "", "fonts/DejaVuSans.ttf", uni=True)
+        self.add_font("DejaVu", "B", "fonts/DejaVuSans-Bold.ttf", uni=True)
         self.add_page()
+        self.set_auto_page_break(auto=True, margin=15)
 
     def header(self):
         self.set_font("DejaVu", 'B', 16)
-        self.cell(0, 10, 'Laporan Validasi Thermal Retort', ln=True, align='C')
-        self.ln(10)
+        self.cell(0, 10, "Laporan Validasi Thermal Retort", ln=True, align='C')
+
+    def chapter_title(self, title):
+        self.set_font("DejaVu", 'B', 14)
+        self.cell(0, 10, title, ln=True, align='L')
 
     def chapter_body(self, text):
         self.set_font("DejaVu", '', 12)
         self.multi_cell(0, 10, text)
-        self.ln()
 
-    def add_metadata(self, produk, tanggal, operator, alat, f0_total, passed):
-        self.set_font("DejaVu", '', 12)
-        self.chapter_body(f"Produk: {produk}\nTanggal: {tanggal}\nOperator: {operator}\nAlat: {alat}")
+    def add_metadata(self, nama_produk, tanggal_proses, operator, alat, f0_total, passed):
+        self.chapter_title("Informasi Umum")
+        self.chapter_body(f"Nama Produk: {nama_produk}\nTanggal Proses: {tanggal_proses}\nOperator: {operator}\nAlat Retort: {alat}")
+        self.chapter_title("Hasil Validasi")
         self.chapter_body(f"Nilai F₀ Total: {f0_total:.2f}\nValidasi Suhu ≥121.1°C selama 3 menit: {'✅ Lolos' if passed else '❌ Tidak Lolos'}")
 
-    def add_chart(self, suhu):
-        plt.figure(figsize=(6, 3))
-        plt.plot(suhu, label="Suhu (°C)")
-        plt.axhline(y=121.1, color='r', linestyle='--', label='121.1°C')
-        plt.xlabel("Menit ke-")
-        plt.ylabel("Suhu (°C)")
-        plt.legend()
-        plt.tight_layout()
-        chart_path = "chart.png"
-        plt.savefig(chart_path)
-        plt.close()
-        self.image(chart_path, x=10, w=180)
-        os.remove(chart_path)
+# === F0 Calculation ===
+def hitung_f0(data_suhu, dt=60):
+    f0 = [0]
+    t_ref = 121.1
+    z = 10
+    counter = 0
+    valid_temp = []
 
-    def save_pdf(self, filename):
-        self.output(filename)
+    for temp in data_suhu:
+        if temp >= t_ref:
+            counter += 1
+            valid_temp.append(1)
+        else:
+            valid_temp.append(0)
+        delta = dt * 10 ** ((temp - t_ref) / z)
+        f0.append(f0[-1] + delta)
+    return f0[1:], valid_temp
 
-# Tambah font Unicode
-pdf_font_path = "fonts/DejaVuSans.ttf"
-if not os.path.exists(pdf_font_path):
-    st.error("Font DejaVuSans.ttf tidak ditemukan di folder 'fonts'. Pastikan sudah mengunggahnya.")
-else:
-    pdf = PDF()
-    pdf.add_font('DejaVu', '', pdf_font_path, uni=True)
+# === Streamlit App ===
+st.set_page_config(page_title="Tools Mengetahui F₀", layout="wide")
+st.title("🔧 Tools Mengetahui F₀ Validasi Thermal Retort")
 
-st.title("🔥 Validasi Thermal Retort (F₀)")
+with st.expander("📄 Input Metadata"):
+    nama_produk = st.text_input("Nama Produk", "Rendang Retort")
+    tanggal_proses = st.date_input("Tanggal Proses", datetime.now()).strftime('%d-%m-%Y')
+    nama_operator = st.text_input("Nama Operator", "Budi")
+    nama_alat = st.text_input("Nama Alat Retort", "Retort A")
 
-# Metadata
-nama_produk = st.text_input("Nama Produk")
-tanggal_proses = st.date_input("Tanggal Proses", datetime.today())
-nama_operator = st.text_input("Nama Operator")
-nama_alat = st.text_input("Nama Alat Retort")
+# === Upload File atau Input Manual ===
+st.markdown("## 📥 Masukkan Data Suhu (°C per menit)")
 
-# Metode input suhu
-input_mode = st.radio("Pilih Metode Input Suhu:", ("Manual", "Upload CSV"))
+input_method = st.radio("Pilih Metode Input:", ["Upload CSV", "Input Manual"])
 
-if input_mode == "Manual":
-    menit = st.number_input("Jumlah Menit Proses", min_value=1, max_value=300, value=10)
-    suhu_list = st.data_editor(
-        pd.DataFrame({"Menit ke-": list(range(1, menit+1)), "Suhu (°C)": [121.1]*menit}),
-        use_container_width=True,
-        key="manual_input"
-    )
-    suhu = suhu_list["Suhu (°C)"].tolist()
-else:
-    uploaded_file = st.file_uploader("Unggah File CSV (Kolom: suhu)", type="csv")
-    suhu = []
+if input_method == "Upload CSV":
+    uploaded_file = st.file_uploader("Upload file CSV berisi data suhu per menit", type="csv")
     if uploaded_file:
         df = pd.read_csv(uploaded_file)
-        if "suhu" in df.columns:
-            suhu = df["suhu"].tolist()
-        else:
-            st.error("File harus memiliki kolom bernama 'suhu'.")
+        suhu = df.iloc[:, 0].tolist()
+        st.line_chart(suhu)
+elif input_method == "Input Manual":
+    suhu_input = st.text_area("Masukkan suhu tiap menit, pisahkan dengan koma", "121.5, 121.7, 122.1, 120.8, 122.5")
+    try:
+        suhu = [float(s.strip()) for s in suhu_input.split(",")]
+        st.line_chart(suhu)
+    except:
+        st.error("Format input tidak valid. Pastikan angka dipisah dengan koma.")
 
-# Fungsi perhitungan F0
-def calculate_f0(suhu, ref_temp=121.1, z=10):
-    dt = 60  # interval 1 menit = 60 detik
-    f0 = [10 ** ((temp - ref_temp) / z) * dt / 60 for temp in suhu]
-    return np.cumsum(f0)
-
-# Tombol proses
-if st.button("🔍 Hitung dan Validasi"):
-    if not suhu:
+# === Hitung dan Tampilkan ===
+if st.button("✅ Hitung Nilai F₀"):
+    if len(suhu) < 1:
         st.warning("Masukkan data suhu terlebih dahulu.")
     else:
-        f0 = calculate_f0(suhu)
-        valid = False
-        durasi_valid = 0
-        for temp in suhu:
-            if temp >= 121.1:
-                durasi_valid += 1
-            else:
-                durasi_valid = 0
-            if durasi_valid >= 3:
-                valid = True
-                break
+        f0_values, valid_flags = hitung_f0(suhu)
+        lolos = sum(valid_flags) >= 3
+        st.success(f"Nilai F₀: {f0_values[-1]:.2f}")
+        st.info(f"Lolos Validasi Suhu ≥121.1°C selama 3 menit: {'✅ Ya' if lolos else '❌ Tidak'}")
 
-        st.success(f"Nilai F₀ Total: {f0[-1]:.2f}")
-        st.info(f"✅ Validasi suhu ≥121.1°C selama 3 menit: {'LOLOS' if valid else 'TIDAK LOLOS'}")
+        # === Buat PDF ===
+        pdf = PDF()
+        pdf.add_metadata(nama_produk, tanggal_proses, nama_operator, nama_alat, f0_values[-1], lolos)
+        output_path = "/tmp/hasil_validasi.pdf"
+        pdf.output(output_path)
 
-        # Plot suhu
-        fig, ax = plt.subplots()
-        ax.plot(suhu, label="Suhu (°C)")
-        ax.axhline(121.1, color='r', linestyle='--', label='121.1°C')
-        ax.set_xlabel("Menit ke-")
-        ax.set_ylabel("Suhu")
-        ax.legend()
-        st.pyplot(fig)
-
-        # PDF
-        report = PDF()
-        report.add_font('DejaVu', '', pdf_font_path, uni=True)
-        report.add_metadata(nama_produk, tanggal_proses, nama_operator, nama_alat, f0[-1], valid)
-        report.add_chart(suhu)
-        filename = f"Laporan_Validasi_{nama_produk.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
-        report.save_pdf(filename)
-
-        with open(filename, "rb") as f:
-            st.download_button("⬇️ Unduh Laporan PDF", f, file_name=filename)
-        os.remove(filename)
+        with open(output_path, "rb") as f:
+            st.download_button("📥 Unduh Laporan PDF", f, file_name="hasil_validasi.pdf", mime="application/pdf")
