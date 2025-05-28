@@ -1,6 +1,5 @@
 streamlit
-pandas
-numpy
+fpdf
 matplotlib
-fpdf2
-DejaVuSans.ttf
+numpy
+pandas
