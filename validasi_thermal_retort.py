@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from fpdf import FPDF
 from fpdf import FPDF
 pdf = FPDF()
-pdf.add_font("DejaVu", "", "DejaVuSans.ttf", uni=True)
+pdf.add_font("DejaVu", "", "DejaVu.ttf", uni=True)
 pdf.set_font("DejaVu", "", 12)
 
 from io import BytesIO
