@@ -26,7 +26,7 @@ class PDF(FPDF):
         self.chapter_body(f"Validasi Suhu ≥121.1°C selama 3 menit: {status}")
 
 # Streamlit app
-st.set_page_config(page_title="Tools mengetahui F0")
+st.set_page_config(page_title="Tools menghitung F0")
 
 st.title("Aplikasi Validasi Thermal Retort")
 
