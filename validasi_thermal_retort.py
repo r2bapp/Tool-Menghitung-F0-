@@ -5,8 +5,39 @@ import matplotlib.pyplot as plt
 from fpdf import FPDF
 from fpdf import FPDF
 pdf = FPDF()
-pdf.add_font("DejaVu", "", "DejaVuSans.ttf", uni=True)
-pdf.set_font("DejaVu", "", 12)
+from fpdf import FPDF
+from io import BytesIO
+import streamlit as st
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+# Inisialisasi objek PDF
+pdf = FPDF()
+pdf.set_auto_page_break(auto=True, margin=15)
+pdf.add_page()
+
+# GANTI: gunakan font standar bawaan FPDF
+pdf.set_font("Arial", size=12)
+
+# Contoh teks (bisa diganti sesuai konteks Anda)
+pdf.cell(200, 10, txt="Laporan Validasi Thermal Retort", ln=True, align="C")
+
+# Tambahkan logika dan data lainnya sesuai aplikasi Anda
+
+# Simpan ke memori
+buffer = BytesIO()
+pdf.output(buffer)
+buffer.seek(0)
+
+# Tampilkan di Streamlit
+st.download_button(
+    label="📄 Download Laporan PDF",
+    data=buffer,
+    file_name="validasi_thermal_retort.pdf",
+    mime="application/pdf"
+)
+
 
 from io import BytesIO
 from datetime import datetime
