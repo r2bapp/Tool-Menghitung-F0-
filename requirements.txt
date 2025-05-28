@@ -3,3 +3,4 @@ pandas
 numpy
 matplotlib
 fpdf2
+DejaVuSans.ttf
