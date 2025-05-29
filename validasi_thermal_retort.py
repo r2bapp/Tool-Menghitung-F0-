@@ -1,17 +1,23 @@
-import streamlit as st
 from fpdf import FPDF
 from io import BytesIO
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
+import streamlit as st
 
-# Inisialisasi objek PDF
 pdf = FPDF()
-pdf.set_auto_page_break(auto=True, margin=15)
 pdf.add_page()
-
-# GANTI: gunakan font standar bawaan FPDF
 pdf.set_font("Arial", size=12)
+pdf.cell(200, 10, txt="Laporan Validasi Thermal Retort", ln=True, align="C")
+
+# Output PDF ke memory
+pdf_bytes = pdf.output(dest="S").encode("latin1")  # convert to bytes
+buffer = BytesIO(pdf_bytes)
+
+# Download button
+st.download_button(
+    label="📄 Download Laporan PDF",
+    data=buffer,
+    file_name="validasi_thermal_retort.pdf",
+    mime="application/pdf"
+)
 
 # Contoh teks (bisa diganti sesuai konteks Anda)
 pdf.cell(200, 10, txt="Laporan Validasi Thermal Retort", ln=True, align="C")
