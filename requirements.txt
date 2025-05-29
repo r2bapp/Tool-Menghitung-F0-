@@ -1,5 +1,5 @@
 streamlit
-fpdf==1.7.2
+fpdf2
 matplotlib
 numpy
 pandas
