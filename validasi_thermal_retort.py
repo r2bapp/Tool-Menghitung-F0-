@@ -77,7 +77,10 @@ def evaluate_f0_validation(
             consecutive_target += 1
             consecutive_tolerance = 0
             if consecutive_target >= target_duration:
-                return True, "LOLOS: suhu >= 121.1 C tercapai minimal selama 3 menit."
+                return (
+                    True,
+                    "LOLOS. Parameter proses panas memenuhi kriteria validasi, yaitu suhu sterilisasi mencapai minimal 121.1 C secara berturut-turut selama sekurang-kurangnya 3 menit.",
+                )
         else:
             consecutive_target = 0
 
@@ -86,14 +89,14 @@ def evaluate_f0_validation(
             if consecutive_tolerance >= tolerance_duration:
                 return (
                     True,
-                    "LOLOS: suhu berada pada rentang 120.0-<121.1 C selama minimal 10 menit sebagai toleransi validasi F0.",
+                    "LOLOS. Parameter proses panas dinyatakan memenuhi kriteria validasi berdasarkan toleransi operasional, yaitu suhu berada pada rentang 120.0 C sampai kurang dari 121.1 C secara berturut-turut selama sekurang-kurangnya 10 menit, sehingga hasil dinyatakan sesuai untuk validasi F0.",
                 )
         else:
             consecutive_tolerance = 0
 
     return (
         False,
-        "TIDAK LOLOS: suhu belum mencapai >= 121.1 C selama 3 menit atau rentang 120.0-<121.1 C selama 10 menit.",
+        "TIDAK LOLOS. Parameter proses panas belum memenuhi kriteria validasi, karena suhu sterilisasi tidak mencapai minimal 121.1 C selama sekurang-kurangnya 3 menit dan juga tidak memenuhi rentang toleransi 120.0 C sampai kurang dari 121.1 C selama sekurang-kurangnya 10 menit.",
     )
 
 
