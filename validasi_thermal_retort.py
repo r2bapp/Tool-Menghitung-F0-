@@ -5,6 +5,7 @@ import tempfile
 from datetime import datetime
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import pandas as pd
 import streamlit as st
 from fpdf import FPDF
@@ -100,14 +101,165 @@ def evaluate_f0_validation(
     )
 
 
+def classify_validation_zone(
+    suhu: float,
+    target_temp: float = 121.1,
+    tolerance_min_temp: float = 120.0,
+) -> str:
+    if suhu >= target_temp:
+        return "target"
+    if tolerance_min_temp <= suhu < target_temp:
+        return "tolerance"
+    return "other"
+
+
 def build_chart_image(df: pd.DataFrame) -> io.BytesIO:
-    figure, axis = plt.subplots(figsize=(8, 4))
-    axis.plot(df["Waktu"], df["Akumulasi F0"], marker="o")
-    axis.set_title("Grafik Akumulasi F0")
-    axis.set_xlabel("Waktu")
-    axis.set_ylabel("F0")
-    axis.grid(True)
-    figure.autofmt_xdate()
+    chart_df = df.copy()
+    chart_df["Menit"] = range(1, len(chart_df) + 1)
+    chart_df["Zona Validasi"] = chart_df["Suhu (C)"].apply(classify_validation_zone)
+
+    plt.style.use("seaborn-v0_8-whitegrid")
+    figure, axis_temp = plt.subplots(figsize=(11, 6))
+    axis_f0 = axis_temp.twinx()
+
+    figure.patch.set_facecolor("white")
+    axis_temp.set_facecolor("#f8fafc")
+
+    axis_temp.axhspan(120.0, 121.1, facecolor="#f59e0b", alpha=0.12)
+    axis_temp.axhspan(121.1, max(chart_df["Suhu (C)"].max() + 2, 123), facecolor="#10b981", alpha=0.08)
+
+    axis_temp.plot(
+        chart_df["Menit"],
+        chart_df["Suhu (C)"],
+        color="#0f172a",
+        linewidth=2.4,
+        marker="o",
+        markersize=5,
+        label="Suhu Proses (C)",
+        zorder=3,
+    )
+    axis_f0.plot(
+        chart_df["Menit"],
+        chart_df["Akumulasi F0"],
+        color="#ea580c",
+        linewidth=2.8,
+        marker="s",
+        markersize=4,
+        label="Akumulasi F0",
+        zorder=4,
+    )
+
+    target_points = chart_df[chart_df["Zona Validasi"] == "target"]
+    tolerance_points = chart_df[chart_df["Zona Validasi"] == "tolerance"]
+
+    if not target_points.empty:
+        axis_temp.scatter(
+            target_points["Menit"],
+            target_points["Suhu (C)"],
+            color="#059669",
+            s=45,
+            zorder=5,
+            label="Zona target >= 121.1 C",
+        )
+    if not tolerance_points.empty:
+        axis_temp.scatter(
+            tolerance_points["Menit"],
+            tolerance_points["Suhu (C)"],
+            color="#d97706",
+            s=45,
+            zorder=5,
+            label="Zona toleransi 120.0-<121.1 C",
+        )
+
+    axis_temp.axhline(121.1, color="#059669", linestyle="--", linewidth=1.5)
+    axis_temp.axhline(120.0, color="#d97706", linestyle=":", linewidth=1.5)
+    axis_temp.axhline(90.0, color="#dc2626", linestyle=":", linewidth=1.2)
+
+    axis_temp.annotate(
+        "Batas target 121.1 C",
+        xy=(chart_df["Menit"].iloc[-1], 121.1),
+        xytext=(-110, 10),
+        textcoords="offset points",
+        color="#047857",
+        fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="#a7f3d0"),
+    )
+    axis_temp.annotate(
+        "Batas toleransi 120.0 C",
+        xy=(chart_df["Menit"].iloc[-1], 120.0),
+        xytext=(-115, -22),
+        textcoords="offset points",
+        color="#b45309",
+        fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="#fde68a"),
+    )
+
+    max_f0 = float(chart_df["Akumulasi F0"].max())
+    axis_f0.scatter(
+        chart_df["Menit"].iloc[-1],
+        max_f0,
+        color="#c2410c",
+        s=70,
+        zorder=6,
+    )
+    axis_f0.annotate(
+        f"F0 akhir: {max_f0:.2f}",
+        xy=(chart_df["Menit"].iloc[-1], max_f0),
+        xytext=(-80, 18),
+        textcoords="offset points",
+        color="#9a3412",
+        fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#fdba74"),
+    )
+
+    axis_temp.set_title("Profil Suhu Sterilisasi dan Akumulasi F0", fontsize=14, fontweight="bold", pad=14)
+    axis_temp.set_xlabel("Menit ke-", fontsize=11)
+    axis_temp.set_ylabel("Suhu Proses (C)", fontsize=11, color="#0f172a")
+    axis_f0.set_ylabel("Akumulasi F0", fontsize=11, color="#ea580c")
+
+    axis_temp.set_xlim(1, len(chart_df))
+    axis_temp.set_ylim(min(85, chart_df["Suhu (C)"].min() - 5), max(123, chart_df["Suhu (C)"].max() + 3))
+    axis_f0.set_ylim(0, max(1, max_f0 * 1.2))
+
+    axis_temp.tick_params(axis="y", colors="#0f172a")
+    axis_f0.tick_params(axis="y", colors="#ea580c")
+    axis_temp.grid(True, which="major", color="#cbd5e1", alpha=0.65)
+    axis_f0.grid(False)
+
+    legend_handles = [
+        Line2D([0], [0], color="#0f172a", lw=2.4, marker="o", markersize=5, label="Suhu Proses (C)"),
+        Line2D([0], [0], color="#ea580c", lw=2.8, marker="s", markersize=4, label="Akumulasi F0"),
+        Line2D([0], [0], color="#059669", lw=1.5, linestyle="--", label="Ambang target 121.1 C"),
+        Line2D([0], [0], color="#d97706", lw=1.5, linestyle=":", label="Ambang toleransi 120.0 C"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="#059669", markersize=8, label="Titik target"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="#d97706", markersize=8, label="Titik toleransi"),
+    ]
+    axis_temp.legend(
+        handles=legend_handles,
+        loc="upper left",
+        frameon=True,
+        framealpha=0.95,
+        facecolor="white",
+        edgecolor="#cbd5e1",
+    )
+
+    summary_text = (
+        f"Total data: {len(chart_df)} menit\n"
+        f"Suhu maksimum: {chart_df['Suhu (C)'].max():.1f} C\n"
+        f"F0 akhir: {max_f0:.2f}"
+    )
+    axis_temp.text(
+        0.985,
+        0.03,
+        summary_text,
+        transform=axis_temp.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.35", fc="white", ec="#cbd5e1"),
+    )
+
+    figure.tight_layout()
 
     image_buffer = io.BytesIO()
     figure.savefig(image_buffer, format="png", bbox_inches="tight")
@@ -280,7 +432,11 @@ def main() -> None:
     else:
         st.error(validation_message)
     st.dataframe(df_result, use_container_width=True)
-    st.line_chart(df_result.set_index("Waktu")[["Akumulasi F0"]])
+    st.image(
+        build_chart_image(df_result),
+        caption="Grafik profil suhu sterilisasi dan akumulasi F0",
+        use_container_width=True,
+    )
 
     pdf_data = generate_pdf(data_input, df_result, total_f0, validation_message)
     st.download_button(
