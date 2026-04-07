@@ -62,42 +62,16 @@ def calculate_f0(df: pd.DataFrame) -> tuple[pd.DataFrame, float]:
     return cleaned_df, total_f0
 
 
-def evaluate_f0_validation(
-    df: pd.DataFrame,
-    target_temp: float = 121.1,
-    target_duration: int = 3,
-    tolerance_min_temp: float = 120.0,
-    tolerance_max_temp: float = 121.1,
-    tolerance_duration: int = 10,
-) -> tuple[bool, str]:
-    consecutive_target = 0
-    consecutive_tolerance = 0
-
-    for suhu in df["Suhu (C)"]:
-        if suhu >= target_temp:
-            consecutive_target += 1
-            consecutive_tolerance = 0
-            if consecutive_target >= target_duration:
-                return (
-                    True,
-                    "LOLOS. Parameter proses panas memenuhi kriteria validasi, yaitu suhu sterilisasi mencapai minimal 121.1 C secara berturut-turut selama sekurang-kurangnya 3 menit.",
-                )
-        else:
-            consecutive_target = 0
-
-        if tolerance_min_temp <= suhu < tolerance_max_temp:
-            consecutive_tolerance += 1
-            if consecutive_tolerance >= tolerance_duration:
-                return (
-                    True,
-                    "LOLOS. Parameter proses panas dinyatakan memenuhi kriteria validasi berdasarkan toleransi operasional, yaitu suhu berada pada rentang 120.0 C sampai kurang dari 121.1 C secara berturut-turut selama sekurang-kurangnya 10 menit, sehingga hasil dinyatakan sesuai untuk validasi F0.",
-                )
-        else:
-            consecutive_tolerance = 0
+def evaluate_f0_validation(total_f0: float, minimum_f0: float = 3.0) -> tuple[bool, str]:
+    if total_f0 > minimum_f0:
+        return (
+            True,
+            f"LOLOS. Proses dinyatakan tervalidasi karena nilai F0 total sebesar {total_f0:.2f} telah melebihi batas minimum {minimum_f0:.2f}.",
+        )
 
     return (
         False,
-        "TIDAK LOLOS. Parameter proses panas belum memenuhi kriteria validasi, karena suhu sterilisasi tidak mencapai minimal 121.1 C selama sekurang-kurangnya 3 menit dan juga tidak memenuhi rentang toleransi 120.0 C sampai kurang dari 121.1 C selama sekurang-kurangnya 10 menit.",
+        f"TIDAK LOLOS. Proses belum dinyatakan tervalidasi karena nilai F0 total sebesar {total_f0:.2f} belum melebihi batas minimum {minimum_f0:.2f}.",
     )
 
 
@@ -409,7 +383,7 @@ def main() -> None:
         st.error("Data suhu belum valid. Isi kolom 'Suhu (C)' dengan angka.")
         return
 
-    is_valid, validation_message = evaluate_f0_validation(df_result)
+    is_valid, validation_message = evaluate_f0_validation(total_f0)
 
     data_input = {
         "tanggal": tanggal,
