@@ -274,22 +274,4 @@ def main() -> None:
 
     save_result(data_input, total_f0, df_input)
 
-    st.success(f"Total nilai F0: {total_f0}")
-    if is_valid:
-        st.success(validation_message)
-    else:
-        st.error(validation_message)
-    st.dataframe(df_result, use_container_width=True)
-    st.line_chart(df_result.set_index("Waktu")[["Akumulasi F0"]])
-
-    pdf_data = generate_pdf(data_input, df_result, total_f0, validation_message)
-    st.download_button(
-        "Unduh Laporan PDF",
-        pdf_data,
-        file_name=f"laporan_retort_{tanggal}.pdf",
-        mime="application/pdf",
-    )
-
-
-if __name__ == "__main__":
-    main()
+    st.success(f"Total nilai F0: {tota
