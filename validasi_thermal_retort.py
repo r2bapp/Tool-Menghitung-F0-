@@ -1,190 +1,292 @@
-from fpdf import FPDF
-from io import BytesIO
-import streamlit as st
-
-pdf = FPDF()
-pdf.add_page()
-pdf.set_font("Arial", size=12)
-pdf.cell(200, 10, txt="Laporan Validasi Thermal Retort", ln=True, align="C")
-
-# Output PDF ke memory
-pdf_bytes = pdf.output(dest="S").encode("latin1")  # convert to bytes
-buffer = BytesIO(pdf_bytes)
-
-# Download button
-st.download_button(
-    label="📄 Download Laporan PDF",
-    data=buffer,
-    file_name="validasi_thermal_retort.pdf",
-    mime="application/pdf"
-)
-
-# Contoh teks (bisa diganti sesuai konteks Anda)
-pdf.cell(200, 10, txt="Laporan Validasi Thermal Retort", ln=True, align="C")
-
-# Tambahkan logika dan data lainnya sesuai aplikasi Anda
-
-# Simpan ke memori
-buffer = BytesIO()
-pdf.output(buffer)
-buffer.seek(0)
-
-# Tampilkan di Streamlit
-st.download_button(
-    label="📄 Download Laporan PDF",
-    data=buffer,
-    file_name="validasi_thermal_retort.pdf",
-    mime="application/pdf"
-)
-
-from io import BytesIO
+import io
+import os
+import sqlite3
+import tempfile
 from datetime import datetime
 
-st.set_page_config(page_title="Validasi Thermal Retort", layout="wide")
-st.title("🔥 Validasi Thermal Proses Sterilisasi - PT Rumah Retort Bersama")
+import matplotlib.pyplot as plt
+import pandas as pd
+import streamlit as st
+from fpdf import FPDF
 
-st.markdown("""
-Aplikasi ini menghitung nilai **F₀ (F-nol)** dari data suhu per menit selama proses sterilisasi.
-Gunakan input manual atau upload file Excel berisi suhu tiap menit.
-""")
 
-# Metadata form
-st.sidebar.header("📝 Form Metadata Proses")
-nama_produk = st.sidebar.text_input("Nama Produk")
-tanggal_proses = st.sidebar.date_input("Tanggal Proses")
-nama_operator = st.sidebar.text_input("Nama Operator")
-nama_alat = st.sidebar.text_input("Nama Alat Retort")
+DB_PATH = "retort_data.db"
 
-# Fungsi hitung F₀
-def calculate_f0(temps, T_ref=121.1, z=10):
+
+def init_db() -> None:
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS hasil_retort (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pelanggan TEXT,
+            nama_umkm TEXT,
+            nama_produk TEXT,
+            nomor_kontak TEXT,
+            jumlah_awal INTEGER,
+            basket1 INTEGER,
+            basket2 INTEGER,
+            basket3 INTEGER,
+            jumlah_akhir INTEGER,
+            total_f0 REAL,
+            tanggal TEXT,
+            data_pantauan TEXT
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def calculate_f0(df: pd.DataFrame) -> tuple[pd.DataFrame, float]:
+    cleaned_df = df.copy()
+    cleaned_df["Suhu (C)"] = pd.to_numeric(cleaned_df["Suhu (C)"], errors="coerce")
+    cleaned_df = cleaned_df.dropna(subset=["Suhu (C)"]).reset_index(drop=True)
+
+    z = 10
+    t_ref = 121.1
     f0_values = []
-    for T in temps:
-        if T < 90:
-            f0_values.append(0)
+
+    for suhu in cleaned_df["Suhu (C)"]:
+        if suhu > 90:
+            nilai_f0 = 10 ** ((suhu - t_ref) / z)
         else:
-            f0_values.append(10 ** ((T - T_ref) / z))
-    return np.cumsum(f0_values)
+            nilai_f0 = 0
+        f0_values.append(nilai_f0)
 
-# Fungsi ekstraksi suhu dari file Excel UMKM
-def extract_suhu_from_umkm_excel(file):
-    try:
-        xls = pd.ExcelFile(file, engine="openpyxl")
-        df_raw = xls.parse('Sheet1', header=None)
+    cleaned_df["F0 per menit"] = f0_values
+    cleaned_df["Akumulasi F0"] = cleaned_df["F0 per menit"].cumsum()
+    total_f0 = round(float(cleaned_df["Akumulasi F0"].iloc[-1]), 2)
+    return cleaned_df, total_f0
 
-        # Cari baris tempat data suhu dimulai
-        start_row = None
-        for i, row in df_raw.iterrows():
-            if row.astype(str).str.contains("DATA PANTAUAN", case=False, na=False).any():
-                start_row = i + 1
-                break
 
-        if start_row is None:
-            raise ValueError("Baris 'DATA PANTAUAN' tidak ditemukan.")
+def evaluate_f0_validation(
+    df: pd.DataFrame,
+    target_temp: float = 121.1,
+    target_duration: int = 3,
+    tolerance_min_temp: float = 120.0,
+    tolerance_max_temp: float = 121.1,
+    tolerance_duration: int = 10,
+) -> tuple[bool, str]:
+    consecutive_target = 0
+    consecutive_tolerance = 0
 
-        df_data = df_raw.iloc[start_row:].reset_index(drop=True)
-
-        suhu_col = None
-        for col in df_data.columns:
-            numeric_col = pd.to_numeric(df_data[col], errors='coerce')
-            if (numeric_col > 90).sum() > 2:
-                suhu_col = col
-                break
-
-        if suhu_col is None:
-            raise ValueError("Kolom suhu tidak ditemukan.")
-
-        suhu = pd.to_numeric(df_data[suhu_col], errors='coerce').dropna().tolist()
-        return suhu
-
-    except Exception as e:
-        st.error(f"❌ Gagal ekstrak suhu dari file: {e}")
-        return []
-
-# Fungsi cek suhu minimal 121.1°C selama ≥3 menit
-def check_minimum_holding_time(temps, min_temp=121.1, min_duration=3):
-    holding_minutes = 0
-    for t in temps:
-        if t >= min_temp:
-            holding_minutes += 1
-            if holding_minutes >= min_duration:
-                return True
+    for suhu in df["Suhu (C)"]:
+        if suhu >= target_temp:
+            consecutive_target += 1
+            consecutive_tolerance = 0
+            if consecutive_target >= target_duration:
+                return True, "LOLOS: suhu >= 121.1 C tercapai minimal selama 3 menit."
         else:
-            holding_minutes = 0
-    return False
+            consecutive_target = 0
 
-# PDF Generator
-class PDF(FPDF):
-    def header(self):
-        self.set_font('Helvetica', 'B', 12)
-        self.cell(0, 10, 'Laporan Validasi Thermal', ln=True, align='C')
+        if tolerance_min_temp <= suhu < tolerance_max_temp:
+            consecutive_tolerance += 1
+            if consecutive_tolerance >= tolerance_duration:
+                return (
+                    True,
+                    "LOLOS: suhu berada pada rentang 120.0-<121.1 C selama minimal 10 menit sebagai toleransi validasi F0.",
+                )
+        else:
+            consecutive_tolerance = 0
 
-    def chapter_title(self, title):
-        self.set_font('Helvetica', 'B', 10)
-        self.cell(0, 10, title, ln=True)
+    return (
+        False,
+        "TIDAK LOLOS: suhu belum mencapai >= 121.1 C selama 3 menit atau rentang 120.0-<121.1 C selama 10 menit.",
+    )
 
-    def chapter_body(self, text):
-        self.set_font('Helvetica', '', 10)
-        self.multi_cell(0, 10, text)
 
-    def add_metadata(self, produk, tanggal, operator, alat, f0_total, passed):
-        self.add_page()
-        self.chapter_title("📋 Metadata Proses")
-        self.chapter_body(f"Produk        : {produk}\nTanggal       : {tanggal}\nOperator      : {operator}\nAlat Retort   : {alat}")
-        self.chapter_title("✅ Hasil Validasi")
-        status = '✅ Lolos' if passed else '❌ Tidak Lolos'
-        self.chapter_body(f"Nilai F₀ Total: {f0_total:.2f}\nValidasi suhu ≥121.1°C selama 3 menit: {status}")
-        self.chapter_title("📅 Tanggal Cetak")
-        self.chapter_body(datetime.now().strftime("%d-%m-%Y %H:%M:%S"))
+def build_chart_image(df: pd.DataFrame) -> io.BytesIO:
+    figure, axis = plt.subplots(figsize=(8, 4))
+    axis.plot(df["Waktu"], df["Akumulasi F0"], marker="o")
+    axis.set_title("Grafik Akumulasi F0")
+    axis.set_xlabel("Waktu")
+    axis.set_ylabel("F0")
+    axis.grid(True)
+    figure.autofmt_xdate()
 
-# Pilihan metode input
-input_method = st.radio("🔘 Pilih Metode Input", ["Manual", "Upload Excel"])
-temps = []
+    image_buffer = io.BytesIO()
+    figure.savefig(image_buffer, format="png", bbox_inches="tight")
+    image_buffer.seek(0)
+    plt.close(figure)
+    return image_buffer
 
-if input_method == "Manual":
-    st.subheader("📋 Input Manual Suhu per Menit")
-    waktu = st.number_input("Jumlah menit", min_value=1, max_value=180, value=10)
-    for i in range(waktu):
-        temp = st.number_input(f"Menit ke-{i+1}: Suhu (°C)", value=25.0, step=0.1, key=f"temp_{i}")
-        temps.append(temp)
 
-elif input_method == "Upload Excel":
-    st.subheader("📄 Upload File Excel")
-    uploaded_file = st.file_uploader("Pilih file Excel (.xlsx)", type=["xlsx"])
-    if uploaded_file:
-        temps = extract_suhu_from_umkm_excel(uploaded_file)
+def generate_pdf(
+    data_input: dict, df: pd.DataFrame, total_f0: float, validation_message: str
+) -> bytes:
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
 
-# Proses F0
-if temps:
-    f0 = calculate_f0(temps)
-    st.info(f"📊 Data suhu valid ditemukan: {len(temps)} menit")
-    st.success(f"✅ Nilai F₀ Total: {f0[-1]:.2f}")
-
-    valid = check_minimum_holding_time(temps)
-    if valid:
-        st.success("✅ Suhu ≥121.1°C tercapai minimal selama 3 menit")
+    tanggal = data_input.get("tanggal")
+    if hasattr(tanggal, "strftime"):
+        tanggal_str = tanggal.strftime("%Y-%m-%d")
     else:
-        st.warning("⚠️ Suhu ≥121.1°C belum tercapai selama 3 menit")
+        tanggal_str = "-"
 
-    fig, ax = plt.subplots()
-    ax.plot(range(1, len(temps)+1), temps, label="Suhu (°C)", marker='o')
-    ax.axhline(90, color='red', linestyle='--', label="Ambang F₀ (90°C)")
-    ax.axhline(121.1, color='green', linestyle='--', label="Target BPOM (121.1°C)")
-    ax.set_xlabel("Menit")
-    ax.set_ylabel("Suhu (°C)")
+    pdf.cell(0, 10, txt="Laporan Hasil Retort", ln=True, align="C")
+    pdf.cell(0, 10, txt="Diproses oleh Rumah Retort Bersama", ln=True, align="C")
+    pdf.ln(5)
 
-    ax2 = ax.twinx()
-    ax2.plot(range(1, len(f0)+1), f0, color='orange', label="F₀ Akumulatif", linestyle='--')
-    ax2.set_ylabel("F₀")
+    pdf.cell(0, 10, txt=f"Tanggal Proses: {tanggal_str}", ln=True)
+    pdf.cell(0, 10, txt=f"Pelanggan: {data_input.get('pelanggan', '-')}", ln=True)
+    pdf.cell(0, 10, txt=f"UMKM: {data_input.get('nama_umkm', '-')}", ln=True)
+    pdf.cell(0, 10, txt=f"Produk: {data_input.get('nama_produk', '-')}", ln=True)
+    pdf.cell(0, 10, txt=f"Nomor Kontak: {data_input.get('nomor_kontak', '-')}", ln=True)
+    pdf.cell(0, 10, txt=f"Jumlah Awal: {data_input.get('jumlah_awal', '-')}", ln=True)
+    pdf.cell(0, 10, txt=f"Basket 1: {data_input.get('basket1', '-')}", ln=True)
+    pdf.cell(0, 10, txt=f"Basket 2: {data_input.get('basket2', '-')}", ln=True)
+    pdf.cell(0, 10, txt=f"Basket 3: {data_input.get('basket3', '-')}", ln=True)
+    pdf.cell(0, 10, txt=f"Jumlah Akhir: {data_input.get('jumlah_akhir', '-')}", ln=True)
+    pdf.cell(0, 10, txt=f"Total F0: {total_f0}", ln=True)
+    pdf.multi_cell(0, 10, txt=f"Status Validasi F0: {validation_message}")
+    pdf.ln(5)
 
-    ax.legend(loc="upper left")
-    ax2.legend(loc="upper right")
-    st.pyplot(fig)
+    chart_buffer = build_chart_image(df)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_chart:
+        temp_chart.write(chart_buffer.getvalue())
+        temp_chart_path = temp_chart.name
 
-    if st.button("📄 Ekspor ke PDF"):
-        pdf = PDF()
-        pdf.add_metadata(nama_produk, tanggal_proses, nama_operator, nama_alat, f0[-1], valid)
-        pdf_bytes = pdf.output(dest='S').encode('latin1')
-        st.download_button("💾 Unduh PDF", data=pdf_bytes, file_name="laporan_validasi.pdf", mime="application/pdf")
+    try:
+        pdf.image(temp_chart_path, x=10, w=180)
+    finally:
+        if os.path.exists(temp_chart_path):
+            os.remove(temp_chart_path)
 
-else:
-    st.warning("⚠️ Masukkan data suhu terlebih dahulu.")
+    return pdf.output(dest="S").encode("latin-1")
+
+
+def save_result(data_input: dict, total_f0: float, raw_df: pd.DataFrame) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO hasil_retort (
+            pelanggan,
+            nama_umkm,
+            nama_produk,
+            nomor_kontak,
+            jumlah_awal,
+            basket1,
+            basket2,
+            basket3,
+            jumlah_akhir,
+            total_f0,
+            tanggal,
+            data_pantauan
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            data_input["pelanggan"],
+            data_input["nama_umkm"],
+            data_input["nama_produk"],
+            data_input["nomor_kontak"],
+            data_input["jumlah_awal"],
+            data_input["basket1"],
+            data_input["basket2"],
+            data_input["basket3"],
+            data_input["jumlah_akhir"],
+            total_f0,
+            data_input["tanggal"].strftime("%Y-%m-%d"),
+            raw_df.to_json(),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def main() -> None:
+    init_db()
+
+    st.set_page_config(layout="wide")
+    st.title("Tools Proses Retort - F0 Calculator | by Rumah Retort Bersama")
+
+    with st.form("input_form"):
+        st.subheader("Data Proses Retort")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            pelanggan = st.text_input("Nama Pelanggan")
+            nama_umkm = st.text_input("Nama UMKM")
+            nama_produk = st.text_input("Nama Produk")
+            nomor_kontak = st.text_input("Nomor Kontak")
+            tanggal = st.date_input("Tanggal Proses", datetime.today())
+
+        with col2:
+            jumlah_awal = st.number_input("Jumlah Awal", min_value=0, step=1)
+            basket1 = st.number_input("Isi Basket 1", min_value=0, step=1)
+            basket2 = st.number_input("Isi Basket 2", min_value=0, step=1)
+            basket3 = st.number_input("Isi Basket 3", min_value=0, step=1)
+            jumlah_akhir = st.number_input("Jumlah Akhir", min_value=0, step=1)
+
+        st.subheader("Data Pantauan per Menit")
+        df_input = st.data_editor(
+            pd.DataFrame(
+                {
+                    "Waktu": [],
+                    "Suhu (C)": [],
+                    "Tekanan (Bar)": [],
+                    "Keterangan": [],
+                }
+            ),
+            num_rows="dynamic",
+            use_container_width=True,
+        )
+
+        submitted = st.form_submit_button("Hitung Nilai F0")
+
+    if not submitted:
+        return
+
+    if df_input.empty:
+        st.error("Masukkan data pantauan terlebih dahulu.")
+        return
+
+    if "Suhu (C)" not in df_input.columns:
+        st.error("Kolom 'Suhu (C)' wajib tersedia.")
+        return
+
+    df_result, total_f0 = calculate_f0(df_input)
+    if df_result.empty:
+        st.error("Data suhu belum valid. Isi kolom 'Suhu (C)' dengan angka.")
+        return
+
+    is_valid, validation_message = evaluate_f0_validation(df_result)
+
+    data_input = {
+        "tanggal": tanggal,
+        "pelanggan": pelanggan,
+        "nama_umkm": nama_umkm,
+        "nama_produk": nama_produk,
+        "nomor_kontak": nomor_kontak,
+        "jumlah_awal": int(jumlah_awal),
+        "basket1": int(basket1),
+        "basket2": int(basket2),
+        "basket3": int(basket3),
+        "jumlah_akhir": int(jumlah_akhir),
+    }
+
+    save_result(data_input, total_f0, df_input)
+
+    st.success(f"Total nilai F0: {total_f0}")
+    if is_valid:
+        st.success(validation_message)
+    else:
+        st.error(validation_message)
+    st.dataframe(df_result, use_container_width=True)
+    st.line_chart(df_result.set_index("Waktu")[["Akumulasi F0"]])
+
+    pdf_data = generate_pdf(data_input, df_result, total_f0, validation_message)
+    st.download_button(
+        "Unduh Laporan PDF",
+        pdf_data,
+        file_name=f"laporan_retort_{tanggal}.pdf",
+        mime="application/pdf",
+    )
+
+
+if __name__ == "__main__":
+    main()
